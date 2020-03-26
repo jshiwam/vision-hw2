@@ -84,7 +84,18 @@ void mark_corners(image im, descriptor *d, int n)
 image make_1d_gaussian(float sigma)
 {
     // TODO: optional, make separable 1d Gaussian.
-    return make_image(1,1,1);
+    int size=6*sigma;
+    size=(size%2==0) ? size+1:size;
+
+    image gaussian = make_image(size,1,1);
+
+    for(int col=0;col<gaussian.w;col++){
+        int x=col-gaussian.w/2;
+        float pixel=((1/(TWOPI*sigma*sigma))*exp(-(pow(x,2))/(2*pow(sigma,2))));
+        set_pixel(gaussian,col,0,0,pixel);
+    }
+    l1_normalize(gaussian);
+    return gaussian;
 }
 
 // Smooths an image using separable Gaussian filter.
@@ -93,17 +104,31 @@ image make_1d_gaussian(float sigma)
 // returns: smoothed image.
 image smooth_image(image im, float sigma)
 {
-    if(1){
+    /*if(1){
         image g = make_gaussian_filter(sigma);
         image s = convolve_image(im, g, 1);
         free_image(g);
         return s;
-    } else {
+    } else {*/
         // TODO: optional, use two convolutions with 1d gaussian filter.
         // If you implement, disable the above if check.
-        return copy_image(im);
+        image g = make_1d_gaussian(sigma);
+        image s = convolve_image(im,g,1);
+
+        image flip_filter=make_image(1,g.w,1);
+        for(int row=0;row<g.w;row++){
+            for(int col=0;col<1;col++){
+                float pix_val = get_pixel(g,row,col,0);
+                set_pixel(flip_filter,col,row,0,pix_val);
+            }
+        }
+
+        s =convolve_image(s,flip_filter,1);
+
+
+        return s;
     }
-}
+//}
 
 // Calculate the structure matrix of an image.
 // image im: the input image.
@@ -114,17 +139,54 @@ image structure_matrix(image im, float sigma)
 {
     image S = make_image(im.w, im.h, 3);
     // TODO: calculate structure matrix for im.
+    image gx = make_gx_filter();
+    image gy = make_gy_filter();
+
+    image ix=convolve_image(im,gx,0);
+    image iy=convolve_image(im,gy,0);
+
+    image ix_ix = make_image(im.w,im.h,1);
+    image iy_iy = make_image(im.w,im.h,1);
+    image ix_iy = make_image(im.w,im.h,1);
+
+    image w = make_gaussian_filter(sigma);
+    for(int row=0;row<im.h;row++){
+        for(int col=0;col<im.c;col++){
+            float ix_ix_val=get_pixel(ix,col,row,0)*get_pixel(ix,col,row,0);
+            float iy_iy_val=get_pixel(iy,col,row,0)*get_pixel(iy,col,row,0);
+            float ix_iy_val=get_pixel(ix,col,row,0)*get_pixel(iy,col,row,0);
+
+            set_pixel(ix_ix,row,col,0,ix_ix_val);
+            set_pixel(ix_iy,row,col,0,ix_iy_val);
+            set_pixel(iy_iy,row,col,0,iy_iy_val);
+        }
+    }
+    image ix_ix_w=convolve_image(ix_ix,w,0);
+    image ix_iy_w=convolve_image(ix_iy,w,0);
+    image iy_iy_w=convolve_image(iy_iy,w,0);
+
+    for(int row=0;row<im.h;row++){
+        for(int col=0;col<im.w;col++){
+            set_pixel(S,col,row,0,get_pixel(ix_ix_w,col,row,0));
+            set_pixel(S,col,row,1,get_pixel(iy_iy_w,col,row,0));
+            set_pixel(S,col,row,2,get_pixel(ix_iy_w,col,row,0));
+        }
+    }
+
     return S;
 }
 
 // Estimate the cornerness of each pixel given a structure matrix S.
 // image S: structure matrix for an image.
 // returns: a response map of cornerness calculations.
+
 image cornerness_response(image S)
 {
     image R = make_image(S.w, S.h, 1);
     // TODO: fill in R, "cornerness" for each pixel using the structure matrix.
     // We'll use formulation det(S) - alpha * trace(S)^2, alpha = .06.
+    float alpha=.06;
+
     return R;
 }
 
@@ -165,7 +227,7 @@ descriptor *harris_corner_detector(image im, float sigma, float thresh, int nms,
     //TODO: count number of responses over threshold
     int count = 1; // change this
 
-    
+
     *n = count; // <- set *n equal to number of corners in image.
     descriptor *d = calloc(count, sizeof(descriptor));
     //TODO: fill in array *d with descriptors of corners, use describe_index.
